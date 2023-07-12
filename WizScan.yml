@@ -1,0 +1,72 @@
+name: "Wiz Scan"
+
+#trigger on PR or WF Call
+on:
+  pull_request:
+    types: [opened, reopened, edited, ready_for_review, synchronized]
+  workflow_call:
+    secrets:
+      wizId:
+        required: true
+      wizSecret:
+        required: true
+
+#Use local ddocker image
+env:
+  DOCKER_IMAGE: ../../Dockerfile
+
+#begin Job
+jobs:
+  wiz_scan:
+    runs-on: ubuntu-latest
+
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: "Get Wiz"
+        run: |
+          curl -o wizcli https://wizcli.app.wiz.io/wizcli
+          chmod +x wizcli
+          ls -l wizcli
+      - name: "[AWS] login to amazon"
+        uses: aws-actions/configure-aws-credentials@v1-node16
+        with:
+          role-to-assume: ##Usually GHA OIDC; todo: make this an input var. 
+          aws-region: "us-east-1"
+
+      - name: "[AWS] login to registry"
+      #todo:upgrade version of ecr-login
+        uses: aws-actions/amazon-ecr-login@v1 
+        id: ecr
+        with:
+          registries: #"accountID"
+
+      - name: set lower case repo name
+        run: |
+          echo "DOCKER_REF=${GITHUB_REPOSITORY,,}" >>${GITHUB_ENV}
+      - name: "Docker Build"
+        id: docker-build
+        run: |
+          docker build \
+            --build-arg GH_PACKAGES_TOKEN=${{ env.GH_PACKAGES_TOKEN }} \
+            --build-arg BUILD_GIT_HASH=${{ github.sha }} \
+            --build-arg BUILD_DATE=`date -u +'%Y-%m-%dT%H:%M:%SZ'` \
+            --build-arg BUILD_TAG=${{ github.sha }} \
+            -t ${{ env.DOCKER_REF }}:${{ github.sha }} .
+        # outputs: ${{ steps.docker-build.outputs.IMAGE_NAME }}
+
+      #             echo ${{ env.DOCKER_REF }}:${{ github.sha }} >> $GITHUB_OUTPUT
+      - name: "Wiz Auth"
+        env:
+        ##Set Wiz Secret, use service role##
+          WIZID: ${{ secrets.wizId }}
+          WIZSECRET: ${{ secrets.wizSecret }}
+        run: |
+          ./wizcli auth --id "$WIZID" --secret "$WIZSECRET"
+      - name: "Wiz Scan"
+        run: |
+          ./wizcli docker scan -p rv-vuln-policy -i ${{ env.DOCKER_REF }}:${{ github.sha }}
