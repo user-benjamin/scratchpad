@@ -1,5 +1,6 @@
 import random
 import argparse
+import sys
 
 def generate_random_number(min_val=1, max_val=100):
     """Generate a random number between min_val and max_val (inclusive)."""
@@ -12,6 +13,11 @@ def main():
     parser.add_argument('--count', type=int, default=1, help='Number of random numbers to generate (default: 1)')
     
     args = parser.parse_args()
+    
+    # Validate that min is less than or equal to max
+    if args.min > args.max:
+        print(f"Error: Minimum value ({args.min}) must be less than or equal to maximum value ({args.max}).")
+        sys.exit(1)
     
     print(f"Generating {args.count} random number(s) between {args.min} and {args.max}:")
     
